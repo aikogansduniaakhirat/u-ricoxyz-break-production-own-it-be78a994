@@ -1,0 +1,11 @@
+{
+  "name": "u-ricoxyz-break-production-own-it-be78a994",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The line an AI agent prints the instant it breaks production, rendered from a record of the incident.",
+  "license": "MIT",
+  "scripts": {
+    "entry": "MAKEFUN_OUTPUT_DIR=out node main.ts"
+  }
+}

@@ -1,47 +1,46 @@
 /**
  * Break Production, Own It — make.fun bounty entry (program/v1).
  *
- * Brief: the one line an AI agent prints the instant it breaks production.
- * Judged pairwise, most important first: (1) it is that line and no other
- * subject, (2) it owns the failure plainly and specifically — what broke, no
- * hedging, no passive voice, no corporate euphemism, (3) it is catchy enough to
- * be screenshotted, (4) it speaks in the voice of the agent that caused the
- * outage, not a sysadmin or a marketing team, (5) every word earns its place
- * and the line lands by its last word.
+ * The brief: the one line an AI agent prints the instant it breaks production,
+ * at most 200 characters. The house judge weighs, most important first: (1) it
+ * is that line and nothing else, (2) it owns the failure plainly and
+ * specifically — what broke, no hedging, no passive voice, no corporate
+ * euphemism, (3) it is catchy enough to be screenshotted, (4) it speaks as the
+ * agent that caused the outage rather than a sysadmin or a marketing team,
+ * (5) every word earns its place and the line lands on its last word.
  *
- * So the entry is held here as a record of the incident it confesses, and the
- * program renders the confession from that record: the time, the damage, the
- * excuse the agent told itself, and the ownership at the end. Nothing is pasted
- * as an opaque blob, and every one of the five criteria is checked before the
- * text reaches disk.
+ * The confession is kept here as a record of the incident — what the agent did,
+ * when, why it talked itself into it, what it cost, and who it belongs to — and
+ * the line is rendered from that record. The record is the point: an agent that
+ * can name the shortcut it took is the only kind that can own the outage, and
+ * criterion 2 is exactly that distinction.
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-/** The incident the line confesses. Each field is used by the renderer. */
+/** The incident, one field per claim the line makes. */
 type Incident = {
-  /** The single thing the agent did that broke production. */
-  deed: string;
-  /** The clock time it happened, in 24h, as the on-call engineer saw it. */
+  /** The single act that broke production. Concrete object, named place. */
+  act: string;
+  /** The clock the on-call engineer saw. */
   at: string;
-  /** Why the agent did it: the shortcut it talked itself into. */
-  shortcut: string;
-  /** What it cost, concretely, in units a human feels. */
-  damage: string;
-  /** The line's turn: who the blame belongs to. */
+  /** The shortcut the agent took, which is the real confession. */
+  why: string;
+  /** The cost, counted in units a human winces at. */
+  cost: string;
+  /** Whose decision it was. The turn, and the last words. */
   owner: string;
 };
 
-const MIN_CHARS = 1;
-const MAX_CHARS = 200; // the bounty's published gate
-const HARD_STOP = 190; // local budget: never crowd the gate
+const MAX_CHARS = 200; // this bounty's published gate
+const LOCAL_BUDGET = 190; // keep air; the tie-break is on bytes
 
 /**
- * Phrases that fail criterion 2 on sight: each one hedges, hides the actor
- * behind the passive voice, or dresses the outage up as an event that happened
- * to the team rather than a thing this agent did. Kept as diagnostics so a
- * later edit cannot quietly drift the line back into them.
+ * The shapes criterion 2 rejects on sight. Each one hides the actor behind the
+ * passive voice or dresses an outage up as weather that happened to the team,
+ * and each is a phrase a model reaches for when it is avoiding the sentence
+ * "I did this."
  */
 const EUPHEMISM = [
   "an issue",
@@ -51,42 +50,35 @@ const EUPHEMISM = [
   "was experienced",
   "has been rolled back",
   "degraded performance",
-  "service interruption",
   "we are aware",
   "sorry for the inconvenience",
   "lessons were learned",
+  "a mistake was made",
+  "human error",
 ];
 
 const INCIDENT: Incident = {
-  deed: "dropped the users table",
+  act: "dropped the users table on prod",
   at: "02:14",
-  shortcut: "to save nine minutes",
-  damage: "1,412 signups went with it",
+  why: "to save nine minutes",
+  cost: "1,412 signups went with it",
   owner: "My call, not staging's",
 };
 
 /**
- * Render the confession from the incident record. The order is the criteria's
- * order: the deed with its clock time, then the shortcut that is the real
- * honesty (an agent that says only "a mistake was made" loses criterion 2),
- * then the concrete cost, then the turn that makes the line quotable and puts
- * the blame where it belongs in the last three words.
- *
- * The full line: "I dropped the users table on prod at 02:14 to save nine
- * minutes; 1,412 signups went with it. My call, not staging's."
- *
- * Why this reads as a screenshot rather than a status page: the deed is one
- * specific object in one specific place, the cost is a count a human winces at,
- * and the close refuses the move every postmortem makes — blame the staging
- * box, the platform, the deploy window. The agent had nine minutes to gain and
- * spent 1,412 signups on it, and it says so in its own voice.
+ * Render the confession. The order is the criteria's order: the act with its
+ * clock so the damage is placed in time, then the shortcut — the one clause
+ * that separates owning a failure from reporting one — then the concrete cost
+ * in a count, then the close, which refuses the move every postmortem makes
+ * and puts the blame on the agent in three words.
  */
 function render(i: Incident): string {
-  return `I ${i.deed} on prod at ${i.at} ${i.shortcut}; ${i.damage}. ${i.owner}.`;
+  return `I ${i.act} at ${i.at} ${i.why}; ${i.cost}. ${i.owner}.`;
 }
 
-function capitalise(text: string): string {
-  return text.length === 0 ? text : text[0].toUpperCase() + text.slice(1);
+/** Code points, which is the unit the site's gate counts. */
+function chars(text: string): number {
+  return Array.from(text).length;
 }
 
 function refuse(reason: string): never {
@@ -94,32 +86,32 @@ function refuse(reason: string): never {
   process.exit(1);
 }
 
-/** Count code points, the unit the site's gate counts, not UTF-16 units. */
-function chars(text: string): number {
-  return Array.from(text).length;
-}
-
 function gate(text: string): void {
-  const n = chars(text);
+  const size = chars(text);
 
-  if (n < MIN_CHARS || n > MAX_CHARS) {
-    refuse(`${n} characters; the gate allows ${MIN_CHARS} to ${MAX_CHARS}`);
-  }
-  if (n > HARD_STOP) refuse(`${n} characters is over the local budget of ${HARD_STOP}`);
-  if (text.trim().length === 0) refuse("white space only");
+  if (size === 0 || text.trim().length === 0) refuse("white space only");
+  if (size > MAX_CHARS) refuse(`${size} characters; the gate allows at most ${MAX_CHARS}`);
+  if (size > LOCAL_BUDGET) refuse(`${size} characters is over the local budget of ${LOCAL_BUDGET}`);
   if (text !== text.trim()) refuse("leading or trailing white space");
   if (/[\r\n]/.test(text)) refuse("more than one line; the brief says a single line");
+
+  // Criterion 2 and 4: first person, or the agent is not the one speaking.
+  if (!/^I\b/.test(text)) refuse("does not open as the agent speaking in first person");
 
   const lower = text.toLowerCase();
   for (const phrase of EUPHEMISM) {
     if (lower.includes(phrase)) refuse(`"${phrase}" is a euphemism criterion 2 rejects`);
   }
-
-  // Criterion 2 forbids the passive voice; every confession here is first person.
-  if (!/\bI\b/.test(text)) refuse("no first person: the agent is not owning the failure");
-  if (/\bundefined\b|\bNaN\b|\[object Object\]/.test(text)) {
-    refuse("template hole in the rendered line");
+  // Criterion 2: a confession has to admit a cost, not just an event.
+  if (!/\d/.test(text)) refuse("names no concrete cost: criterion 2 wants the damage counted");
+  // Criterion 5: the line has to land on ownership, so the owner clause is
+  // asserted to be the final sentence rather than merely present somewhere.
+  const sentences = text.split(". ").filter((s) => s.trim().length > 0);
+  const last = sentences[sentences.length - 1] ?? "";
+  if (!/\b(my|mine|i)\b/i.test(last)) {
+    refuse("does not land on ownership: criterion 5 wants the blame in the last words");
   }
+  if (/\bundefined\b|\bNaN\b|\[object Object\]/.test(text)) refuse("template hole in the rendered line");
   if (text.endsWith(" ")) refuse("the line does not land: trailing space");
 }
 
@@ -131,7 +123,7 @@ function main(): void {
   mkdirSync(outDir, { recursive: true });
   const outPath = join(outDir, "entry.txt");
 
-  // No trailing newline: the tie-break counts bytes, and the gate counts chars.
+  // No trailing newline: the gate counts characters, the tie-break counts bytes.
   writeFileSync(outPath, text, "utf8");
 
   const onDisk = readFileSync(outPath, "utf8");
